@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1CF3A10D2E7FCB8D0094DADC /* CoreXLSX in Frameworks */ = {isa = PBXBuildFile; productRef = 1CF39E9D2E7956750094DADC /* CoreXLSX */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		1CA9B16A2E635CAD001CE56B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,9 +33,22 @@
 		1CA9B1732E635CAD001CE56B /* AIChatUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AIChatUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1CA9B1A12E63FFEA001CE56B /* Exceptions for "AIChat" folder in "AIChat" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 1CA9B15B2E635CAC001CE56B /* AIChat */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1CA9B15E2E635CAC001CE56B /* AIChat */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1CA9B1A12E63FFEA001CE56B /* Exceptions for "AIChat" folder in "AIChat" target */,
+			);
 			path = AIChat;
 			sourceTree = "<group>";
 		};
@@ -52,6 +69,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1CF3A10D2E7FCB8D0094DADC /* CoreXLSX in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +130,7 @@
 			);
 			name = AIChat;
 			packageProductDependencies = (
+				1CF39E9D2E7956750094DADC /* CoreXLSX */,
 			);
 			productName = AIChat;
 			productReference = 1CA9B15C2E635CAC001CE56B /* AIChat.app */;
@@ -195,6 +214,10 @@
 			);
 			mainGroup = 1CA9B1532E635CAC001CE56B;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1CF39E9B2E7956750094DADC /* XCRemoteSwiftPackageReference "sdk-for-swift" */,
+				1CF39E9C2E7956750094DADC /* XCRemoteSwiftPackageReference "CoreXLSX" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1CA9B15D2E635CAC001CE56B /* Products */;
 			projectDirPath = "";
@@ -395,8 +418,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9YSKGZ7WX2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AIChat/Info.plist;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于录音进行口语练习";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "用于将你的语音转换为文字以进行练习";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -422,8 +449,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9YSKGZ7WX2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AIChat/Info.plist;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于录音进行口语练习";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "用于将你的语音转换为文字以进行练习";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -550,6 +581,33 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1CF39E9B2E7956750094DADC /* XCRemoteSwiftPackageReference "sdk-for-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/appwrite/sdk-for-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.0.0;
+			};
+		};
+		1CF39E9C2E7956750094DADC /* XCRemoteSwiftPackageReference "CoreXLSX" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/CoreOffice/CoreXLSX.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.14.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1CF39E9D2E7956750094DADC /* CoreXLSX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1CF39E9C2E7956750094DADC /* XCRemoteSwiftPackageReference "CoreXLSX" */;
+			productName = CoreXLSX;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1CA9B1542E635CAC001CE56B /* Project object */;
 }

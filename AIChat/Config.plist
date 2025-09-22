@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>APPWRITE_PROJECT_ID</key>
+	<string>68c91bbf0031de5f210b</string>
+	<key>APPWRITE_PROJECT_NAME</key>
+	<string>english_words</string>
+	<key>APPWRITE_PUBLIC_ENDPOINT</key>
+	<string>https://sfo.cloud.appwrite.io/v1</string>
+	<key>APPWRITE_SERVER_API_KEY</key>
+	<string>standard_6c34ff9faaa34dcf86c102e1de567573361cfb75128c95bcd2ecd436a228c5647323314ae72564f8332f378faf2d160e0cabd8b67bcf6a26992eefc92e652b4168549a026e2965ca10b9ec328f01685401eec6e63b8970eba8116524e2e12c43d30a963205d0a7b0baa8b33623320917783e8427a3a198ac1bb69ed900206e3c</string>
+</dict>
+</plist>

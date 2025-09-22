@@ -1,0 +1,1205 @@
+import SwiftUI
+
+// MARK: - 列表学习模式视图
+struct ListStudyView: View {
+    @ObservedObject var hybridManager: HybridLearningManager
+    @EnvironmentObject var wrongWordManager: WrongWordManager
+    @EnvironmentObject var appwriteService: AppwriteService
+    @EnvironmentObject var preferencesManager: UserPreferencesManager
+    @StateObject private var phoneticService = PhoneticService()
+    @StateObject private var studyRecordService: StudyRecordDatabaseService
+    @Environment(\.presentationMode) var presentationMode
+    
+    @State private var currentWords: [StudyWord] = []
+    @State private var userAnswers: [String: Bool] = [:] // 用户答案记录
+    @State private var showingResults = false
+    @State private var studyCompleted = false
+    @State private var correctCount = 0
+    @State private var totalCount = 0
+    @State private var isSavingData = false
+    
+    // 卡片模式相关状态
+    @State private var showingCardMode = false
+    
+    init(hybridManager: HybridLearningManager) {
+        self.hybridManager = hybridManager
+        self._studyRecordService = StateObject(wrappedValue: StudyRecordDatabaseService(appwriteService: AppwriteService()))
+    }
+    
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // 顶部进度条和模式切换
+                if !studyCompleted {
+                    topControlsView
+                }
+                        VStack(spacing: 8) {
+                            // 第一行：文字显示模式
+                            HStack(spacing: 8) {
+                                Text("显示模式:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                
+                                HStack(spacing: 4) {
+                                    ForEach(ListDisplayMode.allCases, id: \.self) { mode in
+                                        Button(action: {
+                                            preferencesManager.userPreferences.listDisplayMode = mode
+                                        }) {
+                                            HStack(spacing: 4) {
+                                                Text(mode.emoji)
+                                                    .font(.caption)
+                                                Text(mode.displayName)
+                                                    .font(.caption)
+                                                    .fontWeight(.medium)
+                                            }
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 6)
+                                                    .fill(preferencesManager.userPreferences.listDisplayMode == mode ? 
+                                                          Color.blue.opacity(0.2) : Color.clear)
+                                            )
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 6)
+                                                    .stroke(preferencesManager.userPreferences.listDisplayMode == mode ? 
+                                                            Color.blue : Color.gray.opacity(0.3), lineWidth: 1)
+                                            )
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+                                    }
+                                }
+                                
+                                Spacer()
+                            }
+                            
+                            // 第二行：图片显示控制
+                            HStack(spacing: 8) {
+                                Text("图片显示:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                
+                                Button(action: {
+                                    preferencesManager.userPreferences.showImagesInList.toggle()
+                                }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: preferencesManager.userPreferences.showImagesInList ? "photo" : "photo.slash")
+                                            .font(.caption)
+                                        Text(preferencesManager.userPreferences.showImagesInList ? "显示图片" : "隐藏图片")
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(preferencesManager.userPreferences.showImagesInList ? 
+                                                  Color.green.opacity(0.2) : Color.gray.opacity(0.2))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(preferencesManager.userPreferences.showImagesInList ? 
+                                                    Color.green : Color.gray, lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                
+                                Spacer()
+                            }
+                        }
+                            
+                            Spacer()
+                            
+                            // 卡片测验按钮
+                            Button(action: {
+                                startCardModeTest()
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "rectangle.stack.fill")
+                                        .font(.caption)
+                                    Text("卡片测验")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.orange.opacity(0.2))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.orange, lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .disabled(currentWords.filter { userAnswers[$0.id.uuidString] == nil }.isEmpty)
+                        }
+                        
+                        ProgressView(value: Double(userAnswers.count), total: Double(currentWords.count))
+                            .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                    .background(.white)
+                }
+                
+                if studyCompleted {
+                    // 完成界面
+                    StudyCompletionView(
+                        totalWords: totalCount,
+                        correctAnswers: correctCount,
+                        incorrectAnswers: totalCount - correctCount,
+                        onRestart: {
+                            restartStudy()
+                        },
+                        onExit: {
+                            presentationMode.wrappedValue.dismiss()
+                        }
+                    )
+                } else if currentWords.isEmpty {
+                    // 空状态：没有单词可学习
+                    VStack(spacing: 20) {
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 60))
+                            .foregroundStyle(.gray)
+                        
+                        Text("暂无学习内容")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                        
+                        Text("请先完成单词设置或等待数据加载")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        
+                        Button("返回") {
+                            presentationMode.wrappedValue.dismiss()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    // 操作提示
+                    VStack(spacing: 8) {
+                        HStack {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.left")
+                                    .font(.caption)
+                                Text("左滑标记错词")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.orange)
+                            
+                            Spacer()
+                            
+                            HStack(spacing: 4) {
+                                Text("右滑标记掌握")
+                                    .font(.caption)
+                                Image(systemName: "arrow.right")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.green)
+                        }
+                        
+                        Text("💡 点击查看答案不会记录学习状态，需要滑动来标记")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(.gray.opacity(0.05))
+                    
+                    // 学习列表
+                    ScrollView {
+                        LazyVStack(spacing: 16) {
+                            ForEach(currentWords) { word in
+                                ListStudyWordCard(
+                                    word: word,
+                                    userAnswer: userAnswers[word.id.uuidString],
+                                    onAnswer: { isCorrect in
+                                        handleAnswer(for: word.id, isCorrect: isCorrect)
+                                    },
+                                    phoneticService: phoneticService
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                    }
+                }
+                
+                // 底部操作按钮
+                if !studyCompleted && userAnswers.count == currentWords.count {
+                    VStack(spacing: 12) {
+                        Button(action: {
+                            showResults()
+                        }) {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text("查看结果")
+                            }
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(.blue)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                    .background(.white)
+                }
+            }
+            .navigationTitle("列表学习")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("退出") {
+                        saveDataAndExit()
+                    }
+                    .disabled(isSavingData)
+                }
+            }
+            .onAppear {
+                setupStudy()
+            }
+            .fullScreenCover(isPresented: $showingCardMode) {
+            CardModeTestView(
+                currentWords: currentWords,
+                userAnswers: userAnswers,
+                wrongWordManager: wrongWordManager,
+                appwriteService: appwriteService,
+                preferencesManager: preferencesManager,
+                onCardModeCompleted: { updatedAnswers in
+                    // 更新列表模式的学习进度
+                    userAnswers = updatedAnswers
+                    showingCardMode = false // 关闭卡片模式
+                    
+                    // 重新计算学习进度
+                    updateStudyProgress()
+                    
+                    print("🔄 卡片模式答题结果已同步到列表模式")
+                    print("- 总答题数: \(userAnswers.count)")
+                    print("- 正确数: \(userAnswers.values.filter { $0 }.count)")
+                }
+            )
+        }
+    }
+    
+    // 计算属性：是否有未完成的题目
+    private var hasUnansweredQuestions: Bool {
+        userAnswers.count < currentWords.count
+    }
+    
+    private func setupStudy() {
+        print("📋 ListStudyView setupStudy 开始")
+        print("- hybridManager.todayWords.count: \(hybridManager.todayWords.count)")
+        print("- hybridManager.allAvailableWords.count: \(hybridManager.allAvailableWords.count)")
+        
+        currentWords = Array(hybridManager.todayWords.prefix(10)) // 限制为10个单词
+        totalCount = currentWords.count
+        userAnswers.removeAll()
+        studyCompleted = false
+        correctCount = 0
+        
+        print("- 最终 currentWords.count: \(currentWords.count)")
+        if currentWords.isEmpty {
+            print("⚠️ 警告：没有单词可供学习！")
+        }
+    }
+    
+    private func handleAnswer(for wordId: UUID, isCorrect: Bool) {
+        userAnswers[wordId.uuidString] = isCorrect
+        if isCorrect {
+            correctCount += 1
+        }
+    }
+    
+    private func showResults() {
+        showingResults = true
+        studyCompleted = true
+        
+        // 记录学习结果到错题本（如果有错题）
+        for word in currentWords {
+            if let isCorrect = userAnswers[word.id.uuidString], !isCorrect {
+                // 只记录错误的单词到错题本
+                var wrongWord = WrongWord(
+                    word: word.word,
+                    meaning: word.meaning,
+                    context: word.example,
+                    learningDirection: .recognizeMeaning,
+                    difficulty: .medium // 默认难度
+                )
+                wrongWord.errorCount = 1
+                wrongWord.totalAttempts = 1
+                wrongWord.consecutiveWrong = 1
+                wrongWordManager.addWrongWord(wrongWord)
+            }
+        }
+    }
+    
+    private func restartStudy() {
+        setupStudy()
+    }
+    
+    // 保存数据并退出
+    private func saveDataAndExit() {
+        guard !isSavingData else { return }
+        
+        isSavingData = true
+        print("💾 开始保存学习数据...")
+        
+        Task {
+            await saveStudyRecordsToDatabase()
+            
+            await MainActor.run {
+                isSavingData = false
+                presentationMode.wrappedValue.dismiss()
+            }
+        }
+    }
+    
+    // 保存学习记录到数据库
+    private func saveStudyRecordsToDatabase() async {
+        print("📝 保存学习记录到数据库")
+        print("- 已答题数量: \(userAnswers.count)")
+        print("- 总题目数量: \(currentWords.count)")
+        
+        for word in currentWords {
+            if let isCorrect = userAnswers[word.id.uuidString] {
+                print("📝 保存单词: \(word.word), 正确: \(isCorrect)")
+                
+                if isCorrect {
+                    // 答对的单词 - 记录到学习记录
+                    let studyRecord = StudyRecord(
+                        userId: appwriteService.currentUser?.id ?? "",
+                        word: word.word,
+                        meaning: word.meaning,
+                        context: word.example,
+                        learningDirection: .recognizeMeaning,
+                        isCorrect: true,
+                        answerTime: 0, // 列表模式没有计时
+                        memoryStrength: 0.8, // 默认记忆强度
+                        streakCount: 1
+                    )
+                    
+                    // 保存学习记录到数据库
+                    studyRecordService.addStudyRecord(studyRecord)
+                    print("✅ 保存正确答题记录: \(studyRecord.word)")
+                    
+                } else {
+                    // 答错的单词 - 添加到错题本
+                    let wrongWord = WrongWord(
+                        word: word.word,
+                        meaning: word.meaning,
+                        context: word.example,
+                        learningDirection: .recognizeMeaning,
+                        difficulty: .medium
+                    )
+                    
+                    await MainActor.run {
+                        wrongWordManager.addWrongWord(wrongWord)
+                    }
+                    
+                    print("⭐ 添加到错题本: \(wrongWord.word)")
+                }
+            } else {
+                print("⏭️ 跳过未答题: \(word.word)")
+            }
+        }
+        
+        print("✅ 学习记录保存完成")
+    }
+    
+    // MARK: - 卡片模式测验
+    private func startCardModeTest() {
+        print("🔄 开始卡片模式测验")
+        
+        // 获取未完成的单词
+        let remainingWords = currentWords.filter { userAnswers[$0.id.uuidString] == nil }
+        print("- 未完成单词数量: \(remainingWords.count)")
+        
+        guard !remainingWords.isEmpty else {
+            print("⚠️ 没有未完成的单词，无法开始卡片测验")
+            return
+        }
+        
+        // 直接显示卡片模式
+        showingCardMode = true
+        
+        print("✅ 卡片模式测验已启动")
+        print("- showingCardMode: \(showingCardMode)")
+        print("- currentWords.count: \(currentWords.count)")
+        print("- userAnswers.count: \(userAnswers.count)")
+    }
+    
+    // 更新学习进度
+    private func updateStudyProgress() {
+        correctCount = userAnswers.values.filter { $0 }.count
+        studyCompleted = userAnswers.count >= currentWords.count
+        
+        print("📊 学习进度更新:")
+        print("- 已完成: \(userAnswers.count)/\(currentWords.count)")
+        print("- 正确率: \(correctCount)/\(userAnswers.count)")
+        print("- 学习完成: \(studyCompleted)")
+    }
+    
+    // 顶部控制区域视图
+    private var topControlsView: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("列表学习模式")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                Text("\(userAnswers.count)/\(currentWords.count)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            
+            // 显示模式切换器 - 优化排版，分两行显示
+            VStack(spacing: 8) {
+                // 第一行：文字显示模式
+                HStack(spacing: 8) {
+                    Text("显示模式:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    HStack(spacing: 4) {
+                        ForEach(ListDisplayMode.allCases, id: \.self) { mode in
+                            Button(action: {
+                                preferencesManager.userPreferences.listDisplayMode = mode
+                            }) {
+                                HStack(spacing: 4) {
+                                    Text(mode.emoji)
+                                        .font(.caption)
+                                    Text(mode.displayName)
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(preferencesManager.userPreferences.listDisplayMode == mode ? 
+                                              Color.blue.opacity(0.2) : Color.clear)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(preferencesManager.userPreferences.listDisplayMode == mode ? 
+                                                Color.blue : Color.gray.opacity(0.3), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    
+                    Spacer()
+                }
+                
+                // 第二行：图片显示控制
+                HStack(spacing: 8) {
+                    Text("图片显示:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Button(action: {
+                        preferencesManager.userPreferences.showImagesInList.toggle()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: preferencesManager.userPreferences.showImagesInList ? "photo" : "photo.slash")
+                                .font(.caption)
+                            Text(preferencesManager.userPreferences.showImagesInList ? "显示图片" : "隐藏图片")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(preferencesManager.userPreferences.showImagesInList ? 
+                                      Color.green.opacity(0.2) : Color.gray.opacity(0.2))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(preferencesManager.userPreferences.showImagesInList ? 
+                                        Color.green : Color.gray, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    
+                    Spacer()
+                }
+            }
+                
+            Spacer()
+            
+            // 卡片测验按钮
+            Button(action: {
+                startCardModeTest()
+            }) {
+                HStack {
+                    Image(systemName: "rectangle.stack")
+                        .font(.system(size: 16))
+                    Text("卡片测验")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(.blue)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(PlainButtonStyle())
+            .disabled(hasUnansweredQuestions)
+            .opacity(hasUnansweredQuestions ? 0.6 : 1.0)
+            
+            // 进度条
+            ProgressView(value: Double(userAnswers.count), total: Double(currentWords.count))
+                .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(.white)
+    }
+}
+
+// MARK: - 列表学习单词卡片
+struct ListStudyWordCard: View {
+    let word: StudyWord
+    let userAnswer: Bool?
+    let onAnswer: (Bool) -> Void
+    @ObservedObject var phoneticService: PhoneticService
+    @EnvironmentObject var preferencesManager: UserPreferencesManager
+    
+    @State private var phonetic: String?
+    @State private var showingAnswer = false
+    @State private var dragOffset: CGFloat = 0
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            // 根据显示模式显示内容
+            switch preferencesManager.userPreferences.listDisplayMode {
+            case .hideChinese:
+                // 遮住中文模式：只显示英文
+                englishOnlyView
+            case .hideEnglish:
+                // 遮住英文模式：只显示中文
+                chineseOnlyView
+            case .showAll:
+                // 都显示模式：同时显示英文和中文
+                bothDisplayView
+            }
+        }
+        .padding(20)
+        .background(.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 3)
+        .offset(x: dragOffset)
+        .simultaneousGesture(
+            DragGesture()
+                .onChanged { value in
+                    // 检查滑动方向，要求更严格的条件
+                    let horizontalMovement = abs(value.translation.width)
+                    let verticalMovement = abs(value.translation.height)
+                    
+                    // 更严格的条件：水平滑动必须明显大于垂直滑动，且达到最小距离
+                    if horizontalMovement > verticalMovement * 2 && horizontalMovement > 20 {
+                        // 限制滑动范围
+                        let maxOffset: CGFloat = 80
+                        dragOffset = max(-maxOffset, min(maxOffset, value.translation.width))
+                    }
+                }
+                .onEnded { value in
+                    // 检查是否是有效的水平滑动
+                    let horizontalMovement = abs(value.translation.width)
+                    let verticalMovement = abs(value.translation.height)
+                    
+                    // 更严格的条件：
+                    // 1. 水平滑动必须明显大于垂直滑动（至少2倍）
+                    // 2. 水平滑动距离必须足够大（至少80px）
+                    // 3. 滑动速度不能太快（避免误触）
+                    let isValidHorizontalSwipe = horizontalMovement > verticalMovement * 2 && 
+                                               horizontalMovement > 80 &&
+                                               abs(value.velocity.width) < 1000
+                    
+                    if isValidHorizontalSwipe {
+                        let threshold: CGFloat = 80
+                        
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            if value.translation.width > threshold {
+                                // 右滑 - 标记为掌握
+                                print("✅ 右滑标记掌握: \(word.word)")
+                                onAnswer(true)
+                                dragOffset = 0
+                            } else if value.translation.width < -threshold {
+                                // 左滑 - 标记为错词
+                                print("⭐ 左滑标记错词: \(word.word)")
+                                onAnswer(false)
+                                dragOffset = 0
+                            } else {
+                                dragOffset = 0
+                            }
+                        }
+                    } else {
+                        // 不符合条件，重置偏移
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            dragOffset = 0
+                        }
+                    }
+                }
+        )
+        .onTapGesture {
+            // 点击整个卡片时播放发音
+            print("🎵 用户点击卡片播放发音: \(word.word)")
+            phoneticService.playPronunciation(for: word.word, pronunciationType: preferencesManager.userPreferences.pronunciationType) {}
+        }
+        .onAppear {
+            loadPhonetic()
+        }
+    }
+    
+    private func loadPhonetic() {
+        phonetic = phoneticService.getPhoneticSymbol(for: word.word, pronunciationType: preferencesManager.userPreferences.pronunciationType)
+    }
+    
+    // MARK: - 遮住中文模式：只显示英文
+    private var englishOnlyView: some View {
+        VStack(spacing: 16) {
+            // 英文单词信息（点击整个区域发音）
+            Button(action: {
+                phoneticService.playPronunciation(for: word.word, pronunciationType: preferencesManager.userPreferences.pronunciationType) {}
+            }) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(word.word)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.primary)
+                        
+                        ClickablePhoneticView(word: word.word, phoneticService: phoneticService)
+                    }
+                    
+                    Spacer()
+                    
+                    // 图片和发音按钮
+                    HStack(spacing: 8) {
+                        // 单词图片（根据设置显示或隐藏）
+                        if preferencesManager.userPreferences.showImagesInList {
+                            WordImageView(imageURL: word.imageURL, word: word.word)
+                        }
+                        
+                        // 记忆辅助信息
+                        MemoryAidView(
+                            etymology: word.etymology,
+                            memoryTip: word.memoryTip,
+                            relatedWords: word.relatedWords
+                        )
+                        
+                        // 发音按钮图标
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.blue)
+                            .padding(8)
+                            .background(.blue.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // 固定高度的中文意思显示区域
+            HStack {
+                if showingAnswer || userAnswer != nil {
+                    // 显示中文意思
+                    Text(word.meaning)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                } else {
+                    // 提示点击显示答案
+                    Button(action: {
+                        print("📖 用户点击显示答案: \(word.word)")
+                        // 播放发音
+                        phoneticService.playPronunciation(for: word.word, pronunciationType: preferencesManager.userPreferences.pronunciationType) {}
+                        // 显示答案
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            showingAnswer = true
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: "eye")
+                                .font(.caption)
+                            Text("点击查看中文含义")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.blue)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                
+                Spacer()
+                
+                // 答案状态显示
+                answerStatusView
+            }
+            .frame(height: 32) // 固定高度
+            .padding(.horizontal, 12)
+            .background(.gray.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+    
+    // MARK: - 遮住英文模式：只显示中文
+    private var chineseOnlyView: some View {
+        VStack(spacing: 16) {
+            // 中文意思信息
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    if showingAnswer || userAnswer != nil {
+                        // 显示英文单词（点击整个区域发音）
+                        Button(action: {
+                            phoneticService.playPronunciation(for: word.word, pronunciationType: preferencesManager.userPreferences.pronunciationType) {}
+                        }) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(word.word)
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                        .foregroundStyle(.primary)
+                                    
+                                    ClickablePhoneticView(word: word.word, phoneticService: phoneticService)
+                                }
+                                
+                                Spacer()
+                                
+                                // 图片和发音按钮
+                                HStack(spacing: 8) {
+                                    // 单词图片
+                                    WordImageView(imageURL: word.imageURL, word: word.word)
+                                    
+                                    // 记忆辅助信息
+                                    MemoryAidView(
+                                        etymology: word.etymology,
+                                        memoryTip: word.memoryTip,
+                                        relatedWords: word.relatedWords
+                                    )
+                                    
+                                    // 发音按钮图标
+                                    Image(systemName: "speaker.wave.2.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.blue)
+                                        .padding(8)
+                                        .background(.blue.opacity(0.1))
+                                        .clipShape(Circle())
+                                }
+                            }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    } else {
+                        // 提示点击显示英文
+                        Button(action: {
+                            print("📖 用户点击显示英文: \(word.meaning)")
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                showingAnswer = true
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "eye")
+                                    .font(.caption)
+                                Text("点击查看英文单词")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                
+                Spacer()
+            }
+            
+            // 固定高度的中文意思显示区域
+            HStack {
+                // 始终显示中文意思
+                Text(word.meaning)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                
+                Spacer()
+                
+                // 答案状态显示
+                answerStatusView
+            }
+            .frame(height: 32) // 固定高度
+            .padding(.horizontal, 12)
+            .background(.gray.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+    
+    // MARK: - 都显示模式：同时显示英文和中文
+    private var bothDisplayView: some View {
+        VStack(spacing: 16) {
+            // 英文单词信息（点击整个区域发音）
+            Button(action: {
+                phoneticService.playPronunciation(for: word.word, pronunciationType: preferencesManager.userPreferences.pronunciationType) {}
+            }) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(word.word)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.primary)
+                        
+                        ClickablePhoneticView(word: word.word, phoneticService: phoneticService)
+                    }
+                    
+                    Spacer()
+                    
+                    // 图片和发音按钮
+                    HStack(spacing: 8) {
+                        // 单词图片（根据设置显示或隐藏）
+                        if preferencesManager.userPreferences.showImagesInList {
+                            WordImageView(imageURL: word.imageURL, word: word.word)
+                        }
+                        
+                        // 记忆辅助信息
+                        MemoryAidView(
+                            etymology: word.etymology,
+                            memoryTip: word.memoryTip,
+                            relatedWords: word.relatedWords
+                        )
+                        
+                        // 发音按钮图标
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.blue)
+                            .padding(8)
+                            .background(.blue.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // 固定高度的中文意思显示区域
+            HStack {
+                // 始终显示中文意思
+                Text(word.meaning)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                
+                Spacer()
+                
+                // 答案状态显示
+                answerStatusView
+            }
+            .frame(height: 32) // 固定高度
+            .padding(.horizontal, 12)
+            .background(.gray.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+    
+    // MARK: - 答案状态显示视图
+    private var answerStatusView: some View {
+        Group {
+            if let answer = userAnswer {
+                if answer {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                        Text("已掌握")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.green)
+                    }
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.orange)
+                            .font(.caption)
+                        Text("待复习")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+// MARK: - 学习完成视图
+struct StudyCompletionView: View {
+    let totalWords: Int
+    let correctAnswers: Int
+    let incorrectAnswers: Int
+    let onRestart: () -> Void
+    let onExit: () -> Void
+    
+    var accuracy: Double {
+        guard totalWords > 0 else { return 0 }
+        return Double(correctAnswers) / Double(totalWords)
+    }
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            // 完成图标
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 80))
+                .foregroundStyle(.green)
+            
+            // 标题
+            Text("学习完成！")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+                .foregroundStyle(.primary)
+            
+            // 统计信息
+            VStack(spacing: 16) {
+                HStack(spacing: 20) {
+                    // 总题数
+                    VStack(spacing: 4) {
+                        Text("\(totalWords)")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.blue)
+                        
+                        Text("总题数")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    
+                    // 正确
+                    VStack(spacing: 4) {
+                        Text("\(correctAnswers)")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.green)
+                        
+                        Text("正确")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.green.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    
+                    // 错误
+                    VStack(spacing: 4) {
+                        Text("\(incorrectAnswers)")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.red)
+                        
+                        Text("错误")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.red.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                
+                // 准确率
+                VStack(spacing: 8) {
+                    Text("准确率")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                    
+                    Text("\(Int(accuracy * 100))%")
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .foregroundStyle(accuracy >= 0.8 ? .green : accuracy >= 0.6 ? .orange : .red)
+                }
+                .padding()
+                .background(.quaternary.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            
+            // 操作按钮
+            VStack(spacing: 12) {
+                Button(action: onRestart) {
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                        Text("重新学习")
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                
+                Button(action: onExit) {
+                    HStack {
+                        Image(systemName: "house.fill")
+                        Text("返回主页")
+                    }
+                    .font(.headline)
+                    .foregroundStyle(.blue)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(.blue.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+
+// MARK: - 卡片模式包装器
+struct CardModeWrapper: View {
+    @ObservedObject var hybridManager: HybridLearningManager
+    let currentWords: [StudyWord]
+    let wrongWordManager: WrongWordManager
+    let onAnswerRecorded: (String, Bool) -> Void
+    let onCompleted: () -> Void
+    
+    @State private var lastProgress: Double = 0.0
+    @State private var recordedWords: Set<String> = []
+    
+    var body: some View {
+        HybridLearningView(hybridManager: hybridManager)
+            .onReceive(hybridManager.$learningProgress) { progress in
+                // 监听学习进度的变化
+                if progress > lastProgress {
+                    // 学习进度增加了，说明有新的单词被完成
+                    let completedCount = Int(progress * Double(currentWords.count))
+                    let previousCompletedCount = Int(lastProgress * Double(currentWords.count))
+                    
+                    // 记录新完成的单词
+                    if completedCount > previousCompletedCount {
+                        for i in previousCompletedCount..<completedCount {
+                            if i < currentWords.count {
+                                let wordId = currentWords[i].id.uuidString
+                                if !recordedWords.contains(wordId) {
+                                    // 记录这个单词的答题结果
+                                    // 暂时假设在卡片模式中答对了（因为用户完成了学习）
+                                    onAnswerRecorded(wordId, true)
+                                    recordedWords.insert(wordId)
+                                }
+                            }
+                        }
+                    }
+                    
+                    lastProgress = progress
+                }
+                
+                // 检查是否所有单词都完成了
+                if progress >= 1.0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        onCompleted()
+                    }
+                }
+            }
+    }
+}
+
+// MARK: - 卡片模式测试视图
+struct CardModeTestView: View {
+    let currentWords: [StudyWord]
+    let userAnswers: [String: Bool]
+    let wrongWordManager: WrongWordManager
+    let appwriteService: AppwriteService
+    let preferencesManager: UserPreferencesManager
+    let onCardModeCompleted: ([String: Bool]) -> Void // 卡片模式完成时的回调
+    
+    @State private var cardManager: HybridLearningManager?
+    @State private var cardModeAnswers: [String: Bool] = [:] // 卡片模式中的答题记录
+    
+    // 计算未完成的单词
+    private var remainingWords: [StudyWord] {
+        currentWords.filter { userAnswers[$0.id.uuidString] == nil }
+    }
+    
+    var body: some View {
+        let _ = print("🔄 CardModeTestView 被调用")
+        let _ = print("- currentWords.count: \(currentWords.count)")
+        let _ = print("- userAnswers.count: \(userAnswers.count)")
+        let _ = print("- remainingWords.count: \(remainingWords.count)")
+        
+        if !remainingWords.isEmpty {
+            let _ = print("✅ 创建 HybridLearningView")
+            
+            if let manager = cardManager {
+                CardModeWrapper(
+                    hybridManager: manager,
+                    currentWords: remainingWords,
+                    wrongWordManager: wrongWordManager,
+                    onAnswerRecorded: { wordId, isCorrect in
+                        // 记录卡片模式中的答题结果
+                        cardModeAnswers[wordId] = isCorrect
+                        print("🎯 卡片模式答题记录: \(wordId) -> \(isCorrect)")
+                        
+                        // 如果答对了，将单词标记为已掌握
+                        if isCorrect {
+                            if let word = remainingWords.first(where: { $0.id.uuidString == wordId }) {
+                                // 创建WrongWord对象并标记为已掌握
+                                let wrongWord = WrongWord(
+                                    word: word.word,
+                                    meaning: word.meaning,
+                                    context: word.example,
+                                    learningDirection: .recognizeMeaning
+                                )
+                                wrongWordManager.markAsMastered(wrongWord)
+                                print("✅ 单词已标记为已掌握: \(word.word)")
+                            }
+                        }
+                    },
+                    onCompleted: {
+                        // 卡片模式完成时，合并答题结果并回调
+                        var mergedAnswers = userAnswers
+                        for (wordId, isCorrect) in cardModeAnswers {
+                            mergedAnswers[wordId] = isCorrect
+                        }
+                        onCardModeCompleted(mergedAnswers)
+                        print("✅ 卡片模式完成，合并答题结果: \(mergedAnswers.count) 个答案")
+                    }
+                )
+                .environmentObject(wrongWordManager)
+                .environmentObject(appwriteService)
+                .environmentObject(preferencesManager)
+                .environmentObject(ThemeManager.shared)
+            } else {
+                ProgressView("正在初始化卡片模式...")
+                    .onAppear {
+                        cardManager = HybridLearningManager(appwriteService: AppwriteService())
+                        cardManager?.loadWordsFromList(remainingWords)
+                    }
+            }
+        } else {
+            let _ = print("⚠️ remainingWords 为空")
+            Text("没有可测验的单词")
+                .foregroundStyle(.red)
+        }
+    }
+}
+
+// MARK: - Preview
+#Preview {
+    ListStudyView(hybridManager: HybridLearningManager(appwriteService: AppwriteService()))
+        .environmentObject(WrongWordManager())
+}
